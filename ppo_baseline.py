@@ -40,11 +40,11 @@ class ActorCritic(nn.Module):
         
         if is_continuous:
             self.actor = nn.Sequential(
-                nn.Linear(state_dim, 128),
+                nn.Linear(state_dim, 64),
                 nn.Tanh(),
-                nn.Linear(128,128),
+                nn.Linear(64,64),
                 nn.Tanh(),
-                nn.Linear(128,action_dim),
+                nn.Linear(64,action_dim),
                 nn.Tanh()
             )
         else:
@@ -122,7 +122,7 @@ random_seed = 1234
 env = gym.make('LunarLanderContinuous-v2')
 is_con = 1
 # cont. config
-action_std = 0.2
+action_std = 0.6
 action_std_decay_rate = 0.05
 min_action_std = 0.1
 action_std_decay_freq = int(50)
@@ -138,7 +138,7 @@ else:
 
 ac = ActorCritic(state_dim, n_actions, is_con, action_std)
 adam_actor = torch.optim.Adam(ac.actor.parameters(), lr=0.0003)
-adam_critic= torch.optim.Adam(ac.critic.parameters(), lr=0.001)
+adam_critic= torch.optim.Adam(ac.critic.parameters(), lr=0.0003)
 
 
 def loss(old_log_prob, new_log_prob, advantage, eps):
@@ -153,10 +153,9 @@ episode_rewards = []
 gamma = 0.98
 eps = 0.3
 s = 0
-max_grad_norm =0.5
 mode = "ppo"
 ent_coef = 0.001
-
+grad_clip = 0.5
 
 def t(x): return torch.from_numpy(x).float()
 
@@ -191,14 +190,17 @@ for i in range(1000):
             w.add_scalar("loss/actor_loss", actor_loss, global_step=s)
             adam_actor.zero_grad()
             actor_loss.backward()
+            nn.utils.clip_grad_value_(ac.actor.parameters(), grad_clip)
+
             w.add_histogram("gradients/actor",
                              torch.cat([p.grad.view(-1) for p in ac.actor.parameters()]), global_step=s)
             adam_actor.step()
 
-            critic_loss = advantage.pow(2).mean()#- ent_coef*entropy
+            critic_loss = 0.5* advantage.pow(2).mean()#- ent_coef*entropy
             w.add_scalar("loss/critic_loss", critic_loss, global_step=s)
             adam_critic.zero_grad()
             critic_loss.backward()
+            nn.utils.clip_grad_value_(ac.critic.parameters(), grad_clip)
             w.add_histogram("gradients/critic",
                              torch.cat([p.grad.view(-1) for p in ac.critic.parameters()]), global_step=s)
 
